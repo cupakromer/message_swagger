@@ -1,0 +1,11 @@
+inherit_mode:
+  merge:
+    - Exclude
+    - IgnoredPatterns
+
+inherit_gem:
+  radius-spec: common_rubocop_rails.yml
+
+AllCops:
+  TargetRubyVersion: 3.1.1
+  SuggestExtensions: false
