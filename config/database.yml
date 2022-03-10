@@ -14,6 +14,7 @@ development:
 test:
   <<: *default
   database: message_swagger_test
+  url: <%= ENV["DATABASE_URL"] %>
 
 production:
   <<: *default
