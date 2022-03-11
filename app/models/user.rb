@@ -20,6 +20,8 @@
 #     * **`lower((handle)::text)`**
 #
 class User < ApplicationRecord
+  has_one :direct_depot, class_name: "Depot::User", as: :receiver, dependent: :delete
+
   validates :handle,
             presence: true,
             length: { maximum: 120 },

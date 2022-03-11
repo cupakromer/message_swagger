@@ -59,4 +59,16 @@ RSpec.describe User, type: :model do
       expect(valid_user.save!).to eq(true)
     end
   end
+
+  describe "direct depot association", pending: "TODO: Skipping due to time constraints" do
+    it "has only one"
+
+    it "supports no association set"
+
+    it "deletes the association when the user is deleted"
+
+    # Inverse associations are important for helping to reduce memory overhead and unexpected N+1
+    # queries
+    it "has a correct inverse association"
+  end
 end
