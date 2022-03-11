@@ -20,18 +20,7 @@
 #     * **`receiver_type`**
 #     * **`receiver_id`**
 #
-class Depot < ApplicationRecord
-  # Treat the polymorphic type column as the STI type as well
-  #
-  # This allows us to customize behavior via a subclass keeping our interfaces and associations
-  # cleaner.
-  self.inheritance_column = "receiver_type"
-  self.store_full_sti_class = false
-
-  # TODO: Add protections to prevent this receiver association from being swapped after creation
-  belongs_to :receiver, polymorphic: true
-
-  validates :receiver_id, on: :create, uniqueness: { scope: :receiver_type }
-
-  validates :receiver_type, presence: true
+class Depot::User < Depot
+  validates :receiver_type,
+            inclusion: { in: %w[User], message: "must be User" }
 end
