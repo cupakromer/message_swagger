@@ -83,4 +83,39 @@ RSpec.describe User, type: :model do
     # queries
     it "has a correct inverse association"
   end
+
+  describe "fetching all messages" do
+    fixtures :depots, :users
+
+    let(:author) { users(:author) }
+
+    let(:friend) { users(:friend) }
+
+    it "includes messages authored by the user" do
+      authored_message = author.authored_messages.create!(
+        depot: friend.direct_depot,
+        content: "Hello Friend",
+      )
+
+      expect(author.messages).to include(authored_message)
+    end
+
+    it "includes messages to the user's DM depot" do
+      received_dm = author.authored_messages.create!(
+        depot: friend.direct_depot,
+        content: "Hello Friend",
+      )
+
+      expect(friend.messages).to include(received_dm)
+    end
+
+    it "does not include messages authored by another user for a non-subscribed depot" do
+      non_author_dm = friend.authored_messages.create!(
+        depot: friend.direct_depot,
+        content: "Friendly note to self",
+      )
+
+      expect(author.messages).not_to include(non_author_dm)
+    end
+  end
 end
