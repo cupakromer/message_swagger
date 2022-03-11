@@ -20,6 +20,15 @@
 #     * **`lower((handle)::text)`**
 #
 class User < ApplicationRecord
+  has_one :direct_depot, class_name: "Depot::User", as: :receiver, dependent: :delete
+
+  # TODO: Is there a better domain term for this? (compositions?)
+  has_many :authored_messages,
+           class_name: "Message",
+           foreign_key: :author_id,
+           inverse_of: :author,
+           dependent: :delete_all
+
   validates :handle,
             presence: true,
             length: { maximum: 120 },
@@ -34,4 +43,12 @@ class User < ApplicationRecord
   validates :name,
             presence: true,
             length: { maximum: 400 }
+
+  # TODO: Promote this to a customized association/scope to support eager loading
+  def messages
+    query = authored_messages
+    query = query.or(direct_depot.messages) if direct_depot
+
+    query
+  end
 end
