@@ -7,7 +7,7 @@ Service/Subsystem(s): Messages
 
 ## Status
 
-Status: Proposed <!-- Proposed | Accepted | Rejected -->
+Status: Accepted
 
 
 ## References
@@ -16,6 +16,9 @@ Status: Proposed <!-- Proposed | Accepted | Rejected -->
 - [Feature: Stream messages][2]
 - [Feature: Topic messages][3]
 - [Feature: Group messages][4]
+- [PostgreSQL: Data Definition Inheritance][6]
+- [PofEAA Catalog: Class Table Inheritance][7]
+- [Stack Overflow: "polymorphism" for FOREIGN KEY constraints][8]
 
 
 ## Problem Statement and Context
@@ -38,6 +41,15 @@ of these are on the road map we need to keep them in mind when we develop the de
 that so that we can do our best, given our time constraints, to make design steps that support these
 longer term goals. Worst case, we make an informed trade-off that is a lateral step, but we really
 don't want to pick a design that will send us backwards.
+
+The potential for a consolidated implementation from the stream, topic and group messages was
+discussed with PMs. At this time it seems reasonable to view topic and group messages are
+essentially the same thing. The main difference will likely be in the behavior of how users can be
+subscribed to those. Please take the following with a measured perspective as a lot of this is still
+up in the air. In the discussions, the current thinking is that any user can self-subscribe to
+[topic messages][3] but only the existing members of a group can subscribe new people to the
+[private group messages][4]; the creator of a private group would automatically become the first
+member and such private groups must have at least one member to exist.
 
 
 ## Future State / Proposal
@@ -76,9 +88,10 @@ erDiagram
 This proposal utilizes a polymorphic associations and an additional entity in an attempt to balance
 complexity, future extensibility and data integrity.
 
-We lose data integrity with the polymorphic association (i.e. no foreign keys). We attempt to gain
-some of that back by introducing the additional `depositories` entity which we anticipate to have a
-much lower cardinality than `messages`.
+We lose data integrity with the polymorphic association (i.e. no foreign keys; see
+[Decision](#decision) below for more details). We attempt to gain some of that back by introducing
+the additional `depositories` entity which we anticipate to have a much lower cardinality than
+`messages`.
 
 However, this design builds in flexibility for the planned future expansion into streams, topic
 groups and private groups.
@@ -139,7 +152,14 @@ order and not order of preference):
 
 For the "depository" role:
 
+- channel (borrowed from Slack)
+- depot
 - destination
+- distribution_list
+- dropbox
+- inbox
+- message_depot
+- queue (borrowed from RabbitMQ)
 - receiver
 - recipient
 - target
@@ -241,8 +261,9 @@ erDiagram
 This intentionally is not flushing out how we will implement the various groups. Instead it is
 including some concept of "group" (_handy wavey_) to guide the design. By using polymorphism all
 messages are contained to a single table. This should make queries straight forward. However,
-polymorphism prevents data integrity through foreign keys. Given the expected high cardinality of
-`messages` this could prove to be a long term maintenance nightmare.
+polymorphism prevents data integrity through foreign keys (see [Decision](#decision)). Given
+the expected high cardinality of `messages` this could prove to be a long term maintenance
+nightmare.
 
 #### Alternative Design 4
 
@@ -313,45 +334,188 @@ defined associations. That is definitely a bump in ease of use on the code side.
 But, this does maintain the data integrity between the tables. And this can provide some
 alternatives to avoid the extra SQL joins.
 
+#### Additional Message Attributes
+
+During the team discussion (ref [slack][5]), some additional timestamps were broached:
+
+- `sent_at` or `authored_at`: timestamp when a message was successfully sent to the server
+
+  This could allow us differentiate between a client composing the message locally and when the
+  server received (i.e. it was "sent").
+- `received_at`: timestamp when a client received a message
+
+  Similarly, this would be when a client actually downloads the message. This sort of breaks down
+  for group messages as there are multiple end users for those.
+- `deleted_at`: support for soft delete
+
+  At scale retaining data people don't want can be costly. This type of soft delete can be useful
+  for supporting "Undo" operations for a period of time. However, will direct messages there are two
+  sides to who gets to see it. Whom would be able to perform the deletion? Would we need multiple
+  timestamps? How would this work with groups?
+
 ## Decision
 
-**TL;DR; Short summary sentence of the final decision**
+**Proposed schema is accepted with a few modifications.**
 
-<!--
-This section resolves questions raised under the Alternatives heading. It is a clear statement of
-what the team has settled on as the most appropriate solution to the problem under consideration.
+```mermaid
+erDiagram
+  USERS {
+      bigint id PK
+  }
 
-Be sure to include _why_ the decision was made in comparison to the alternatives and options
-presented above. As part of the _why_ behind the decision, the reasoning behind accepting any and
-all disadvantages or trade-offs of the chosen solution need to be clearly addressed in this section.
+  GROUPS {
+      bigint id PK
+  }
 
-Additionally, it is good to include information about _how_ decision drivers impacted the choice. As
-well as, what influence the history and long term architecture goals had on this decision.
--->
+  MESSAGES {
+      bigint id PK
+      bigint author_id FK "users.id"
+      bigint depot_id "depot.id"
+      string content
+  }
+
+  DEPOTS {
+      bigint id PK
+      bigint receiver_id "users.id OR groups.id"
+      string receiver_type "User OR Group"
+  }
+
+  USERS ||--o{ MESSAGES : "authors"
+  USERS ||--|| DEPOTS : "DIRECT"
+  GROUPS ||--o{ DEPOTS : "TOPIC | GROUP"
+  DEPOTS ||--o{ MESSAGES : "receives"
+```
+
+The team discussed the changes in [slack][5] and an associated huddle. The team felt the design
+looked like a decent compromise as noted above. However, some naming changes were suggested and have
+been incorporated in this accepted decision.
+
+The main change is to use the shorter `depot` over `depository`. While `depository` may be more
+technically correct per the dictionary definition, it is a lot to say and type. The team felt the
+shorter `depot` was a comparable terse alternative. Now that the entity is called `Depot` the
+polymorphic names need to be updated so that we don't overload the term. Based on the available
+alternatives (per above), the team felt `receiver` was succinct.
+
+In regards to the association reference `author_id`, over say the more conventional Rails `user_id`,
+was expression of intent and codifying domain language. The team felt the added complexity this will
+incur in the association definition was acceptable for the expression gained. We say "authors write
+...", in this case the author is both the composer and the sender. In this case, the team felt the
+term "author" clearly expressed both the attribute role and the originator.
+
+And for the message text, we agreed `content` was clear. We rejected several alternatives to avoid
+term overloading with the tech stack and domain:
+
+- **body:** too overloaded with HTTP request/response body
+- **message:** writing `message.message` looked a bit odd
+- **text:** felt too generic and potentially confusing with SMS
+
+The topic of stream messages came up in regards to this design. This ADR isn't intended to solve how
+we will implement stream messages, but since our design is influenced by the road map it is
+important to note our thoughts on how we thing the design fits with it. We believe this design can
+support stream messages in one of two potential ways:
+
+1. `messages.depot_id` may be `NULL` indicating the broadcast intent
+2. A special `depots` record is generated using the special ID `0`
+
+   By default PostgreSQL starts all auto-incrementing sequence IDs with 1. So we can treat the `0`
+   value as special and assign it to the special "stream depot".
+
+### Database Structure
+
+**Messages Table**
+
+Name                | Type               | Attributes
+-----------------   | ------------------ | ---------------------------
+**`id`**            | `bigint`           | `not null, primary key`
+**`author_id`**     | `bigint`           | `not null, references users(id)`
+**`depot_id`**      | `bigint`           | `not null, references depots(id)`
+**`content`**       | `string(4000)`     | `not null`
+**`created_at`**    | `datetime`         | `not null`
+**`updated_at`**    | `datetime`         | `not null`
+
+As noted above, it's possible in the future we will model stream messages by setting `depot_id` to
+`NULL`. This design intentionally does not support that. The other alternative we may consider does
+have a `depot_id`. For data integrity we know we need `depot_id` for direct messages, so we want to
+enforce this from the start. It's always much easier to remove a `NULL` constraint than it is to add
+one. When we remove the constraint, all the existing data has a value present, so there's no real
+issue. But if we didn't enforce this and we later wanted to add it, it's possible there will be
+existing records without a value. Attempting to reconcile that data and decide what value to insert
+is not always straight forward. So best to avoid that possibility whenever possible.
+
+We want to keep the message content "short". In discussion with PM we've decided "short" means less
+than "a few thousand characters". We are not currently offering markdown formatting as an option so
+we've arbitrarily decided 4,000 characters feels like a solid limit. We specifically call our
+markdown formatting here as Slack provides it and we'd have to include the format characters as part
+of the content; which would mean a potentially higher limit.
+
+**Depots Table**
+
+Name                | Type               | Attributes
+-----------------   | ------------------ | ---------------------------
+**`id`**            | `bigint`           | `not null, primary key`
+**`receiver_id`**   | `bigint`           | `not null`
+**`receiver_type`** | `bigint`           | `not null`
+**`created_at`**    | `datetime`         | `not null`
+**`updated_at`**    | `datetime`         | `not null`
+
+#### Alternative Designs Rejections
+
+The team agreed that _Alternative Design 1_ is too narrowly focuses on just one feature in the road
+map and has a high probability of risky data migrations. Thus it was rejected.
+
+With _Alternative Design 2_ the team felt it was a progressive step in clarifying some of the core
+"message" structure which is unlikely to change. However, messages don't exist in isolation, so as a
+coherent data unit, not having a foreign key to the ultimate destination provides an incomplete
+picture; though it does have potential benefits in regards to horizontal scaling / sharding due to
+direction of the foreign key association. But it also would mean that for every message we have to
+create 2 records (one in `messages` and one in `direct_messages`).
+
+Polymorphic types do not support database level integrity, via foreign keys, without some additional
+work (reference [PofEAA Catalog: Class Table Inheritance][7]; there is a nice example of this in a
+Stack Overflow [answer on such constraints][8]). Similarly, [PostgreSQL table inheritance][6] treats
+the sub-tables as distinct from the parent table and thus each of the parents / child tables
+requires a separate foreign key. As noted above _Alternative Design 3_ incurs risk by removing the
+foreign key integrity constraint on a high cardinality table. Thus we agreed to reject the design.
+
+_Alternative Design 4_ briefly explore using Rails' single table inheritance to provide strong
+foreign key integrity. STI has a lot of detractors due to the tendency for it to balloon tables with
+a lot of empty columns. But it has the added benefit of making behavior inheritance and
+customizations cleaner in the code.
+
+In summary, the team felt the accepted design was compromise between the trade-offs of polymorphism
+and STI. We hope it provides the benefits of both while minimizing, but not eliminating, the
+risks/downsides.
+
+For the alternative message attributes, we are passing on them all at the moment. For the local
+client timestamps (`authored_at` and `received_at`) there's too many unknowns for the moment. Also,
+those feel like things which could be useful for a P2P or LAN/WAN distributed implementation where
+they get synced with the online server later. None of this is on the road map so we are not spending
+further time considering it today.
+
+As for the soft deletion of the messages. This is an important question, but as noted above, we have
+a lot of outstanding questions about behavior. We need to address those first before we implement
+that.
 
 
 ## Consequences
 
-<!--
-This section is intended to be a quick reference for later and thus should matter of factly state
-the advantages and disadvantages of the decision. For example, what are the long term impacts? What
-things do people need to keep in mind moving forward?
+Implementation of the associations need to utilizing some configuration to map to the domain
+language. Additionally, explicit table joins and unions may be necessary to answer questions such as
+"What are all my DMs?".
 
-People can reference the Context and Decision sections for the _why_ behind it all.
+Due to time constraints the database designs were not benchmarked. As such performance should be
+monitored or time taken to utilizing pgbench for confirmation of our choice.
 
-Finally, make it clear in what the expectations are for other engineers. Do they need to start
-making changes in their applications to reflect the decision? Do they need to make a change to their
-way of working, or their toolchain? How can they get started? In short, what do teams need to do to
-fulfill the requirements of the ADR?
-
-This is also a good time to highlight any sort of follow-up items which are required. For example,
-was any part of the decision punted on? Are there glaring unknowns which are being left until a
-later time?
--->
-
+Similarly, handling hiding / deleting messages from only one side of a conversation is not resolved
+here. There are legitimate questions around record preservation and preventing abuse (i.e. a victim
+shouldn't have to wait for an abuser to delete their message to not see it).
 
 
 [1]: https://github.com/cupakromer/message_swagger/issues/2
 [2]: https://github.com/cupakromer/message_swagger/issues/3
 [3]: https://github.com/cupakromer/message_swagger/issues/4
 [4]: https://github.com/cupakromer/message_swagger/issues/5
+[5]: some-fake-slack-link
+[6]: https://www.postgresql.org/docs/14/ddl-inherit.html
+[7]: https://www.martinfowler.com/eaaCatalog/classTableInheritance.html
+[8]: https://stackoverflow.com/a/28223885
