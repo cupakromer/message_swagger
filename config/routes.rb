@@ -5,7 +5,7 @@ Rails.application.routes.draw do
 
   namespace :api do
     namespace :v1 do
-      # TODO: Add resource here
+      resources :messages, only: %i[index show create delete]
     end
   end
 
