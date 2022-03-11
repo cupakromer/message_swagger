@@ -22,6 +22,13 @@
 class User < ApplicationRecord
   has_one :direct_depot, class_name: "Depot::User", as: :receiver, dependent: :delete
 
+  # TODO: Is there a better domain term for this? (compositions?)
+  has_many :authored_messages,
+           class_name: "Message",
+           foreign_key: :author_id,
+           inverse_of: :author,
+           dependent: :delete_all
+
   validates :handle,
             presence: true,
             length: { maximum: 120 },

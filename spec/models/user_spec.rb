@@ -71,4 +71,16 @@ RSpec.describe User, type: :model do
     # queries
     it "has a correct inverse association"
   end
+
+  describe "authored messages association", pending: "TODO: Skipping due to time constraints" do
+    it "may have many"
+
+    it "only includes messages authored by the user"
+
+    it "deletes all the messages when the user is deleted"
+
+    # Inverse associations are important for helping to reduce memory overhead and unexpected N+1
+    # queries
+    it "has a correct inverse association"
+  end
 end

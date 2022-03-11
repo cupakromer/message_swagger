@@ -30,4 +30,16 @@ RSpec.describe Depot, type: :model do
       expect(valid_depot).to validate_presence_of(:receiver_type)
     end
   end
+
+  describe "messages association", pending: "TODO: Skipping due to time constraints" do
+    it "may have many"
+
+    it "only includes messages for this depot"
+
+    it "deletes all the messages when the depot is deleted"
+
+    # Inverse associations are important for helping to reduce memory overhead and unexpected N+1
+    # queries
+    it "has a correct inverse association"
+  end
 end
