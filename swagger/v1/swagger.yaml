@@ -1,0 +1,143 @@
+---
+openapi: 3.0.1
+info:
+  title: Message Swagger API V1
+  description: This is a demo server for a messaging API
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+  version: 1.0.0
+paths:
+  "/api/v1/messages":
+    get:
+      summary: Get all your messages
+      tags:
+      - Messages
+      parameters:
+      - name: limit
+        required: false
+        description: 'Limits number of record returned (default: 100, max: 100)'
+        in: query
+        example: 5
+        schema:
+          type: integer
+      - name: since
+        required: false
+        description: 'Limits records to those having created since this many days
+          ago (default: 30, max: 30)'
+        in: query
+        example: 30
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: messages found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      "$ref": "#/components/schemas/Message"
+  "/api/v1/messages/{id}":
+    get:
+      summary: Get a single message
+      tags:
+      - Messages
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: message found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    "$ref": "#/components/schemas/Message"
+        '404':
+          description: message not found
+servers:
+- url: "{scheme}://{defaultHost}"
+  variables:
+    defaultHost:
+      default: localhost:3000
+    scheme:
+      enum:
+      - https
+      - http
+      default: http
+security:
+- BearerAuth: []
+components:
+  schemas:
+    Message:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Unique resource identifier
+          example: 1532513
+        author_id:
+          type: integer
+          format: int64
+          description: Unique resource identifier for the `User` whom authored the
+            message
+          example: 1034934475
+        depot:
+          type: object
+          description: Unique compound key identifing the receiver of the message
+          properties:
+            receiver_id:
+              type: integer
+              format: int64
+              description: Unique resource identifier scoped by `resource_type`
+              example: 367963234
+            receiver_type:
+              type: string
+              enum:
+              - User
+              description: Resource type name of the receiver
+              example: User
+          required:
+          - receiver_id
+          - receiver_type
+        content:
+          type: string
+          description: Raw text of the message
+          example: Hello Friend
+        created_at:
+          type: string
+          format: date-time
+          description: ISO-8601 UTC timestamp of when the message was created
+          example: '2022-03-11T22:35:14.837Z'
+        updated_at:
+          type: string
+          format: date-time
+          description: ISO-8601 UTC timestamp of when the message record was last
+            modified
+          example: '2022-03-11T22:35:14.837Z'
+        url:
+          type: string
+          format: url
+          description: URL to fetch this resource
+      required:
+      - id
+      - author_id
+      - depot
+      - content
+  securitySchemes:
+    BearerAuth:
+      type: http
+      description: 'Placeholder auth for demo purposes only (TODO: Replace with secure
+        auth)'
+      scheme: bearer
+      bearerFormat: AUTH-PLACEHOLDER-USER_ID
